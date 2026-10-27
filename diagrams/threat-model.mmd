@@ -1,0 +1,94 @@
+%% Data Flow Diagram (DFD Level 1) for SecureShop E-Commerce Web Application
+%% Compliant with standard STRIDE Threat Modeling methodology
+
+flowchart TB
+    %% =========================================================================
+    %% STYLING AND THEME DEFINITIONS
+    %% =========================================================================
+    classDef entity fill:#E1F5FE,stroke:#0288D1,stroke-width:2px,color:#01579B,font-weight:bold;
+    classDef process fill:#E8F5E9,stroke:#388E3C,stroke-width:2px,color:#1B5E20,font-weight:bold;
+    classDef datastore fill:#FFF8E1,stroke:#FFA000,stroke-width:2px,color:#E65100,font-weight:bold;
+    classDef external fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#4A148C,font-weight:bold;
+    classDef boundary fill:none,stroke:#D32F2F,stroke-width:2px,stroke-dasharray: 6 4,color:#B71C1C;
+
+    %% =========================================================================
+    %% EXTERNAL ENTITIES (Outside Trust Boundary TB-01 and TB-04)
+    %% =========================================================================
+    subgraph External_Users ["Untrusted External Clients & Administrators"]
+        Customer["👤 External Customer<br/>(Web Browser)"]:::entity
+        Admin["👨‍💻 System Administrator<br/>(Admin Browser / Workstation)"]:::entity
+    end
+
+    %% =========================================================================
+    %% TRUST BOUNDARY 01 & 04: Public Internet & Admin Perimeter
+    %% =========================================================================
+    subgraph TB01 ["🔒 Trust Boundary TB-01 & TB-04: Public Internet & Edge DMZ"]
+        
+        %% Process 1: Web Application Entry Point & Edge Controller
+        subgraph Web_Tier ["Application Presentation & Edge Tier"]
+            WebApp["⚙️ P1: Web Application Server<br/>(Reverse Proxy, Routing & Presentation)"]:::process
+        end
+
+        %% =====================================================================
+        %% TRUST BOUNDARY 02: Internal Application & Service Boundary
+        %% =====================================================================
+        subgraph TB02 ["🔒 Trust Boundary TB-02: Private Service Network (Internal)"]
+            
+            %% Process 2: Authentication & Session Management
+            AuthService["🔐 P2: Auth & Session Management<br/>(Credential Validation & Token Issuance)"]:::process
+            
+            %% Process 3: Product Catalog & Order Processing
+            OrderService["📦 P3: Product & Order Processing<br/>(Business Logic & State Machine)"]:::process
+
+            %% Data Stores
+            Database[("🗄️ DS1: Primary Relational Database<br/>[PII, Hashed Passwords, Catalog, Orders]")]:::datastore
+            SessionStore[("⚡ DS2: Session & Cache Store<br/>[Active Tokens, Revocation Lists, Rate Limits]")]:::datastore
+        end
+
+        %% =====================================================================
+        %% TRUST BOUNDARY 05: Telemetry & Monitoring Boundary
+        %% =====================================================================
+        subgraph TB05 ["🔒 Trust Boundary TB-05: Security Operations & Telemetry"]
+            AuditStore[("📊 DS3: Security Logging & SIEM<br/>[Access Logs, Security Audit Events, Alerts]")]:::datastore
+        end
+
+    end
+
+    %% =========================================================================
+    %% TRUST BOUNDARY 03: Third-Party External Boundary
+    %% =========================================================================
+    subgraph TB03 ["🔒 Trust Boundary TB-03: Third-Party SaaS Gateway"]
+        PaymentGateway["💳 External Payment Gateway<br/>(PCI-DSS Level 1 Processor API)"]:::external
+    end
+
+    %% =========================================================================
+    %% DIRECTIONAL DATA FLOWS WITH LABELS
+    %% =========================================================================
+    
+    %% Customer Flows
+    Customer -->|"DF-01: HTTPS / TLS 1.3<br/>Browse catalog, register, submit login"| WebApp
+    WebApp -->|"DF-02: HTTPS / TLS 1.3<br/>HTML pages, catalog data, session cookies"| Customer
+    Customer -->|"DF-03: HTTPS / TLS 1.3<br/>Submit cart checkout & order request"| WebApp
+    Customer -.->|"DF-04: Direct Hosted Payment Modal / Redirect (TLS 1.3)<br/>Raw credit card data (never touches SecureShop servers)"| PaymentGateway
+
+    %% Administrator Flows
+    Admin -->|"DF-05: HTTPS / TLS 1.3 (MFA Protected)<br/>Admin login, product catalog CRUD, order status"| WebApp
+    WebApp -->|"DF-06: HTTPS / TLS 1.3<br/>Admin dashboard views, management reports"| Admin
+
+    %% Web App to Auth Service
+    WebApp -->|"DF-07: Internal RPC / TLS<br/>Authenticate credentials, verify session token"| AuthService
+    AuthService -->|"DF-08: Internal TCP / TLS<br/>Fetch password hash, verify user role"| Database
+    AuthService -->|"DF-09: Internal TCP / TLS<br/>Create/verify session token, update rate-limit counter"| SessionStore
+
+    %% Web App to Order Service
+    WebApp -->|"DF-10: Internal RPC / TLS<br/>Create order, fetch order history, update catalog"| OrderService
+    OrderService -->|"DF-11: Internal SQL / TLS<br/>Read/Write orders, update inventory, fetch items"| Database
+
+    %% Payment Gateway Integration
+    OrderService -->|"DF-12: HTTPS / TLS 1.3 (mTLS / API Key)<br/>Create payment intent, request charge token"| PaymentGateway
+    PaymentGateway -->|"DF-13: HTTPS / TLS 1.3 (HMAC Webhook)<br/>Asynchronous payment confirmation webhook"| WebApp
+
+    %% Security Logging & Auditing
+    WebApp -->|"DF-14a: Syslog / HTTPS<br/>HTTP request logs, WAF alerts, rate-limit events"| AuditStore
+    AuthService -->|"DF-14b: Syslog / HTTPS<br/>Auth failures, privilege elevations, lockout events"| AuditStore
+    OrderService -->|"DF-14c: Syslog / HTTPS<br/>Order state changes, payment webhook audits"| AuditStore
