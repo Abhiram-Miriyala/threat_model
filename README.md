@@ -398,3 +398,4 @@ git push -u origin main
 Copy the public repository URL from your browser address bar:
 `https://github.com/<your-username>/secure-shop-threat-model`
 Submit this URL into your **EdVyro Internship Portal** under the project submission form.
+"# threat_model" 
